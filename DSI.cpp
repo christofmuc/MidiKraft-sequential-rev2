@@ -231,6 +231,65 @@ namespace midikraft {
 		return globalSettings_;
 	}
 
+	void DSISynth::setMidiClockMode(ClockMode clockMode)
+	{
+		auto clockSetting = globalSettingsTree_.getPropertyAsValue(Identifier("MIDI Clock Mode"), nullptr, true);
+		switch (clockMode)
+		{
+		case midikraft::MidiClockCapability::ClockMode::INVALID:
+			jassertfalse;
+			SimpleLogger::instance()->postMessage("Program error - can't set clock to INVALID clock mode!");
+			break;
+		case midikraft::MidiClockCapability::ClockMode::OFF:
+			clockSetting.setValue(0);
+			break;
+		case midikraft::MidiClockCapability::ClockMode::MASTER:
+			clockSetting.setValue(1);
+			break;
+		case midikraft::MidiClockCapability::ClockMode::SLAVE:
+			clockSetting.setValue(2);
+			break;
+		case midikraft::MidiClockCapability::ClockMode::SLAVE_NO_START_STOP:
+			clockSetting.setValue(4);
+			break;
+		case midikraft::MidiClockCapability::ClockMode::SLAVE_THROUGH:
+			clockSetting.setValue(3);
+			break;
+		default:
+			jassertfalse;
+			SimpleLogger::instance()->postMessage("Program error - can't set clock to unknown clock mode!");
+			break;
+		}
+	}
+
+	midikraft::MidiClockCapability::ClockMode DSISynth::getMidiClockMode()
+	{
+		 // This can be extracted from the global settings data
+		var clockMode = globalSettingsTree_.getProperty(Identifier("MIDI Clock Mode"));
+		if (clockMode.isInt()) {
+			switch ((int)clockMode) {
+			case 0: return MidiClockCapability::ClockMode::OFF;
+			case 1: return MidiClockCapability::ClockMode::MASTER;
+			case 2: return MidiClockCapability::ClockMode::SLAVE;
+			case 3: return MidiClockCapability::ClockMode::SLAVE_THROUGH;
+			case 4: return MidiClockCapability::ClockMode::SLAVE_NO_START_STOP;
+			}
+		}
+		return MidiClockCapability::ClockMode::INVALID;
+	}
+
+	juce::Value DSISynth::getMidiClockModeValue()
+	{
+		return globalSettingsTree_.getPropertyAsValue(Identifier("MIDI Clock Mode"), nullptr);
+	}
+
+	std::vector<midikraft::MidiClockCapability::ClockMode> DSISynth::getSupportedClockModes()
+	{
+		// The DSI synths have a pretty complete list of supported MIDI clock modes
+		return { MidiClockCapability::ClockMode::OFF, MidiClockCapability::ClockMode::MASTER,
+			MidiClockCapability::ClockMode::SLAVE, MidiClockCapability::ClockMode::SLAVE_THROUGH, MidiClockCapability::ClockMode::SLAVE_NO_START_STOP };
+	}
+
 	void DSISynth::setGlobalSettingsFromDataFile(std::shared_ptr<DataFile> dataFile)
 	{
 		if (dataFile && dataFile->dataTypeID() == settingsDataFileType()) {

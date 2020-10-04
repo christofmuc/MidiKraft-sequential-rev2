@@ -13,6 +13,7 @@
 #include "SoundExpanderCapability.h"
 #include "MasterkeyboardCapability.h"
 #include "GlobalSettingsCapability.h"
+#include "MidiClockCapability.h"
 
 #include "TypedNamedValue.h"
 
@@ -29,7 +30,8 @@ namespace midikraft {
 	};
 
 	class DSISynth : public Synth, public SimpleDiscoverableDevice, public EditBufferCapability, public ProgramDumpCabability,
-		public SoundExpanderCapability, public MasterkeyboardCapability, public KeyboardCapability, public GlobalSettingsCapability {
+		public SoundExpanderCapability, public MasterkeyboardCapability, public KeyboardCapability, public GlobalSettingsCapability,
+		public MidiClockCapability {
 	public:
 		// Basic Synth
 		virtual bool isOwnSysex(MidiMessage const &message) const override;
@@ -69,6 +71,12 @@ namespace midikraft {
 
 		// Implement this to get the common global settings implementation working
 		virtual std::vector<DSIGlobalSettingDefinition> dsiGlobalSettings() const = 0;
+
+		// MidiClockCapability
+		void setMidiClockMode(ClockMode clockMode) override;
+		ClockMode getMidiClockMode() override;
+		virtual Value getMidiClockModeValue() override;
+		std::vector<ClockMode> getSupportedClockModes() override;
 
 	protected:
 		DSISynth(uint8 midiModelID);
