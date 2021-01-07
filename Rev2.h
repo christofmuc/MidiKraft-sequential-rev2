@@ -66,6 +66,7 @@ namespace midikraft {
 		virtual PatchData filterVoiceRelevantData(std::shared_ptr<DataFile> unfilteredData) const override;
 
 		// DataFileLoadCapability - this is used for loading the GlobalSettings from the synth for the property editor
+		virtual std::vector<DataFileImportDescription> dataFileImportChoices() const override;
 		std::vector<MidiMessage> requestDataItem(int itemNo, int dataTypeID) override;
 		int numberOfDataItemsPerType(int dataTypeID) const override;
 		bool isDataFile(const MidiMessage &message, int dataTypeID) const override;

@@ -86,6 +86,15 @@ namespace midikraft {
 		}
 	}
 
+	std::vector<midikraft::DataFileLoadCapability::DataFileImportDescription> Rev2::dataFileImportChoices() const
+	{
+		std::vector<midikraft::DataFileLoadCapability::DataFileImportDescription> result;
+		for (int i = 0; i < numberOfBanks(); i++) {
+			result.push_back({ friendlyBankName(MidiBankNumber::fromZeroBase(i)), PATCH, i * numberOfPatches() });
+		}
+		return result;
+	}
+
 	int Rev2::numberOfBanks() const
 	{
 		return 8;
