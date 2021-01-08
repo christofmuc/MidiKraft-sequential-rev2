@@ -548,9 +548,9 @@ namespace midikraft {
 		return {};
 	}
 
-	midikraft::DataFileLoadCapability * Rev2::loader()
+	std::shared_ptr<midikraft::DataFileLoadCapability> Rev2::loader()
 	{
-		return this;
+		return shared_from_this();
 	}
 
 	void Rev2::setLocalControl(MidiController *controller, bool localControlOn)

@@ -15,7 +15,7 @@
 
 namespace midikraft {
 
-	class Rev2 : public DSISynth, public LayerCapability, public DataFileLoadCapability, public DataFileSendCapability
+	class Rev2 : public DSISynth, public LayerCapability, public DataFileLoadCapability, public DataFileSendCapability, public std::enable_shared_from_this<Rev2>
 	{
 	public:
 		// Data Item Types
@@ -77,7 +77,7 @@ namespace midikraft {
 		std::vector<MidiMessage> dataFileToMessages(std::shared_ptr<DataFile> dataFile, std::shared_ptr<SendTarget> target) const override;
 
 		//TODO These should go into the DSISynth class
-		virtual DataFileLoadCapability *loader() override;
+		virtual std::shared_ptr<DataFileLoadCapability> loader() override;
 		virtual int settingsDataFileType() const override;
 
 		// Implement generic DSISynth global settings capability
