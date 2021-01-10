@@ -90,7 +90,7 @@ namespace midikraft {
 	{
 		std::vector<midikraft::DataFileLoadCapability::DataFileImportDescription> result;
 		for (int i = 0; i < numberOfBanks(); i++) {
-			result.push_back({ friendlyBankName(MidiBankNumber::fromZeroBase(i)), PATCH, i * numberOfPatches() });
+			result.push_back({ DataStreamType(PATCH), friendlyBankName(MidiBankNumber::fromZeroBase(i)), i * numberOfPatches() });
 		}
 		return result;
 	}
@@ -150,12 +150,12 @@ namespace midikraft {
 		//TODO - this is a hack. We should only store MIDI messages in the database, should we?
 		// Recreate a MIDI message from the bytes given, and test if it is a valid datafile...
 		auto message = MidiMessage::createSysExMessage(data.data(), (int) data.size());
-		if (isDataFile(message, GLOBAL_SETTINGS)) {
-			auto result = loadData({ message }, GLOBAL_SETTINGS);
+		if (isPartOfDataFileStream(message, DataStreamType(GLOBAL_SETTINGS))) {
+			auto result = loadData({ message }, DataStreamType(GLOBAL_SETTINGS));
 			return result[0];
 		}
-		else if (isDataFile(message, ALTERNATE_TUNING)) {
-			auto result = loadData({ message }, ALTERNATE_TUNING);
+		else if (isDataFile(message, DataFileType(ALTERNATE_TUNING))) {
+			auto result = loadData({ message }, DataStreamType(ALTERNATE_TUNING));
 			return result[0];
 		}
 
@@ -380,9 +380,9 @@ namespace midikraft {
 		return MidiNote(0x60);
 	}
 
-	std::vector<juce::MidiMessage> Rev2::requestDataItem(int itemNo, int dataTypeID)
+	std::vector<juce::MidiMessage> Rev2::requestDataItem(int itemNo, DataStreamType dataTypeID)
 	{
-		switch (dataTypeID) {
+		switch (dataTypeID.asInt()) {
 		case GLOBAL_SETTINGS:
 			return { MidiHelpers::sysexMessage({ 0b00000001, midiModelID_, 0b00001110 /* Request global parameter transmit */ }) };
 		case ALTERNATE_TUNING:
@@ -394,9 +394,11 @@ namespace midikraft {
 		return {};
 	}
 
-	int Rev2::numberOfDataItemsPerType(int dataTypeID) const
+	int Rev2::numberOfMidiMessagesPerStreamType(DataStreamType dataTypeID) const
 	{
-		switch (dataTypeID) {
+		switch (dataTypeID.asInt()) {
+		case PATCH:
+			return 1;
 		case GLOBAL_SETTINGS:
 			return 1;
 		case ALTERNATE_TUNING:
@@ -407,13 +409,12 @@ namespace midikraft {
 		return 0;
 	}
 
-	bool Rev2::isDataFile(const MidiMessage &message, int dataTypeID) const
+	bool Rev2::isDataFile(const MidiMessage &message, DataFileType dataTypeID) const
 	{
-		switch (dataTypeID)
+		switch (dataTypeID.asInt())
 		{
 		case PATCH:
-			//TODO Patch Loading is done via the Edit Buffer mechanism
-			return false;
+			return isSingleProgramDump(message) || isEditBufferDump(message);
 		case GLOBAL_SETTINGS:
 			if (isOwnSysex(message)) {
 				if (message.getSysExDataSize() > 2 && message.getSysExData()[2] == 0b00001111 /* Main Parameter Data*/) {
@@ -427,6 +428,24 @@ namespace midikraft {
 			jassert(false);
 		}
 		return false;
+	}
+
+	bool Rev2::isPartOfDataFileStream(const MidiMessage &message, DataStreamType dataTypeID) const
+	{
+		// For the Rev2, this is identical to the dataFileTypes, as e.g. there is no divergence between a bank dump and a patch stream
+		return isDataFile(message, DataFileType(dataTypeID.asInt()));
+	}
+
+	class Rev2GlobalSettingsDataFile : public DataFile {
+	public:
+		using DataFile::DataFile;
+
+		virtual std::string name() const override;
+	};
+
+	std::string Rev2GlobalSettingsDataFile::name() const
+	{
+		return "Rev2 Global Settings";
 	}
 
 	struct Rev2GlobalSettings {
@@ -483,15 +502,15 @@ namespace midikraft {
 		globalSettingsTree_.addListener(&updateSynthWithGlobalSettingsListener_);
 	}
 
-	std::vector<std::shared_ptr<DataFile>> Rev2::loadData(std::vector<MidiMessage> messages, int dataTypeID) const
+	std::vector<std::shared_ptr<DataFile>> Rev2::loadData(std::vector<MidiMessage> messages, DataStreamType dataTypeID) const
 	{
 		std::vector<std::shared_ptr<DataFile>> result;
 		for (auto m : messages) {
-			if (isDataFile(m, dataTypeID)) {
-				switch (dataTypeID) {
+			if (isPartOfDataFileStream(m, dataTypeID)) {
+				switch (dataTypeID.asInt()) {
 				case GLOBAL_SETTINGS: {
 					std::vector<uint8> syx(m.getSysExData(), m.getSysExData() + m.getSysExDataSize());
-					auto storage = std::make_shared<MTSFile>(GLOBAL_SETTINGS, syx);
+					auto storage = std::make_shared<Rev2GlobalSettingsDataFile>(GLOBAL_SETTINGS, syx);
 					result.push_back(storage);
 					break;
 				}
@@ -517,7 +536,9 @@ namespace midikraft {
 
 	std::vector<DataFileLoadCapability::DataFileDescription> Rev2::dataTypeNames() const
 	{
-		return { { "Patch", true, true}, { "Global Settings", true, false}, { "Alternate Tuning", false, true } };
+		return { { DataFileType(PATCH), "Patch", true, true}, 
+		{ DataFileType(GLOBAL_SETTINGS), "Global Settings", true, false}, 
+		{ DataFileType(ALTERNATE_TUNING), "Alternate Tuning", false, true } };
 	}
 
 	std::vector<juce::MidiMessage> Rev2::dataFileToMessages(std::shared_ptr<DataFile> dataFile, std::shared_ptr<SendTarget> target) const
@@ -603,6 +624,11 @@ namespace midikraft {
 	int Rev2::settingsDataFileType() const
 	{
 		return GLOBAL_SETTINGS;
+	}
+
+	midikraft::DataFileLoadCapability::DataFileImportDescription Rev2::settingsImport() const
+	{
+		return { DataStreamType(GLOBAL_SETTINGS), "Rev2 Globals", 0 };
 	}
 
 	std::vector<midikraft::DSIGlobalSettingDefinition> Rev2::dsiGlobalSettings() const

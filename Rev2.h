@@ -18,7 +18,7 @@ namespace midikraft {
 	class Rev2 : public DSISynth, public LayerCapability, public DataFileLoadCapability, public DataFileSendCapability, public std::enable_shared_from_this<Rev2>
 	{
 	public:
-		// Data Item Types
+		// Data Item Types, for storage in the database!
 		enum DataType {
 			PATCH = 0, 
 			GLOBAL_SETTINGS = 1,
@@ -67,10 +67,11 @@ namespace midikraft {
 
 		// DataFileLoadCapability - this is used for loading the GlobalSettings from the synth for the property editor
 		virtual std::vector<DataFileImportDescription> dataFileImportChoices() const override;
-		std::vector<MidiMessage> requestDataItem(int itemNo, int dataTypeID) override;
-		int numberOfDataItemsPerType(int dataTypeID) const override;
-		bool isDataFile(const MidiMessage &message, int dataTypeID) const override;
-		std::vector<std::shared_ptr<DataFile>> loadData(std::vector<MidiMessage> messages, int dataTypeID) const override;
+		std::vector<MidiMessage> requestDataItem(int itemNo, DataStreamType dataTypeID) override;
+		virtual int numberOfMidiMessagesPerStreamType(DataStreamType dataTypeID) const override;
+		bool isPartOfDataFileStream(const MidiMessage &message, DataStreamType dataTypeID) const override;
+		bool isDataFile(const MidiMessage &message, DataFileType dataTypeID) const override;
+		std::vector<std::shared_ptr<DataFile>> loadData(std::vector<MidiMessage> messages, DataStreamType dataTypeID) const override;
 		std::vector<DataFileDescription> dataTypeNames() const override;
 
 		// DataFileSendCapability
@@ -79,6 +80,7 @@ namespace midikraft {
 		//TODO These should go into the DSISynth class
 		virtual std::shared_ptr<DataFileLoadCapability> loader() override;
 		virtual int settingsDataFileType() const override;
+		virtual DataFileLoadCapability::DataFileImportDescription settingsImport() const override;
 
 		// Implement generic DSISynth global settings capability
 		virtual std::vector<DSIGlobalSettingDefinition> dsiGlobalSettings() const override;
