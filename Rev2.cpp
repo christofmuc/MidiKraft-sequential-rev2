@@ -90,9 +90,20 @@ namespace midikraft {
 	{
 		std::vector<midikraft::DataFileLoadCapability::DataFileImportDescription> result;
 		for (int i = 0; i < numberOfBanks(); i++) {
-			result.push_back({ DataStreamType(PATCH), friendlyBankName(MidiBankNumber::fromZeroBase(i)), i * numberOfPatches() });
+			result.push_back({ DataStreamType(PATCH_STREAM), friendlyBankName(MidiBankNumber::fromZeroBase(i)), i * numberOfPatches() });
 		}
 		return result;
+	}
+
+	int Rev2::numberOfMidiMessagesPerStreamType(DataStreamType dataTypeID) const
+	{
+		switch (dataTypeID.asInt())
+		{
+		case PATCH_STREAM:
+			return numberOfPatches();
+		default:
+			return 1;
+		}
 	}
 
 	int Rev2::numberOfBanks() const
@@ -383,6 +394,8 @@ namespace midikraft {
 	std::vector<juce::MidiMessage> Rev2::requestDataItem(int itemNo, DataStreamType dataTypeID)
 	{
 		switch (dataTypeID.asInt()) {
+		case PATCH_STREAM:
+			return requestPatch(itemNo);
 		case GLOBAL_SETTINGS:
 			return { MidiHelpers::sysexMessage({ 0b00000001, midiModelID_, 0b00001110 /* Request global parameter transmit */ }) };
 		case ALTERNATE_TUNING:
@@ -392,21 +405,6 @@ namespace midikraft {
 			jassert(false);
 		}
 		return {};
-	}
-
-	int Rev2::numberOfMidiMessagesPerStreamType(DataStreamType dataTypeID) const
-	{
-		switch (dataTypeID.asInt()) {
-		case PATCH:
-			return 1;
-		case GLOBAL_SETTINGS:
-			return 1;
-		case ALTERNATE_TUNING:
-			return 17;
-		default:
-			jassert(false);
-		}
-		return 0;
 	}
 
 	bool Rev2::isDataFile(const MidiMessage &message, DataFileType dataTypeID) const
@@ -430,10 +428,33 @@ namespace midikraft {
 		return false;
 	}
 
+	bool Rev2::isStreamComplete(std::vector<MidiMessage> const &messages, DataStreamType streamType) const
+	{
+		int count = 0;
+		for (auto message : messages) {
+			if (isPartOfDataFileStream(message, streamType)) count++;
+		}
+		switch (streamType.asInt())
+		{
+		case PATCH_STREAM:
+			if (count == numberOfPatches()) return true;
+			break;
+		default:
+			if (count >= 1) return true;
+		}
+		return false;
+	}
+
 	bool Rev2::isPartOfDataFileStream(const MidiMessage &message, DataStreamType dataTypeID) const
 	{
-		// For the Rev2, this is identical to the dataFileTypes, as e.g. there is no divergence between a bank dump and a patch stream
-		return isDataFile(message, DataFileType(dataTypeID.asInt()));
+		switch (dataTypeID.asInt())
+		{
+		case PATCH_STREAM:
+			return isSingleProgramDump(message);
+		default:
+			// For the Rev2, this is identical to the dataFileTypes, as e.g. there is no divergence between a bank dump and a patch stream
+			return isDataFile(message, DataFileType(dataTypeID.asInt()));
+		}
 	}
 
 	class Rev2GlobalSettingsDataFile : public DataFile {
@@ -508,6 +529,9 @@ namespace midikraft {
 		for (auto m : messages) {
 			if (isPartOfDataFileStream(m, dataTypeID)) {
 				switch (dataTypeID.asInt()) {
+				case PATCH_STREAM:
+					result.push_back(patchFromSysex(m));
+					break;
 				case GLOBAL_SETTINGS: {
 					std::vector<uint8> syx(m.getSysExData(), m.getSysExData() + m.getSysExDataSize());
 					auto storage = std::make_shared<Rev2GlobalSettingsDataFile>(GLOBAL_SETTINGS, syx);
@@ -643,6 +667,18 @@ namespace midikraft {
 		int section = bank / 4;
 		int program = programNo.toZeroBased() % 128;
 		return (boost::format("%s%d P%d") % (section == 0 ? "U" : "F") % ((bank % 4) + 1) % program).str();
+	}
+
+	bool Rev2::shouldStreamAdvance(std::vector<MidiMessage> const &messages, DataStreamType streamType) const
+	{
+		ignoreUnused(messages);
+		switch (streamType.asInt())
+		{
+		case PATCH_STREAM:
+			return true;
+		default:
+			return false;
+		}
 	}
 
 }

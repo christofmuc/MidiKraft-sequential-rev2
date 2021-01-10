@@ -24,6 +24,9 @@ namespace midikraft {
 			GLOBAL_SETTINGS = 1,
 			ALTERNATE_TUNING = 2
 		};
+		enum Rev2StreamType {
+			PATCH_STREAM = 3
+		};
 
 		Rev2();
 
@@ -67,10 +70,12 @@ namespace midikraft {
 
 		// DataFileLoadCapability - this is used for loading the GlobalSettings from the synth for the property editor
 		virtual std::vector<DataFileImportDescription> dataFileImportChoices() const override;
-		std::vector<MidiMessage> requestDataItem(int itemNo, DataStreamType dataTypeID) override;
 		virtual int numberOfMidiMessagesPerStreamType(DataStreamType dataTypeID) const override;
+		std::vector<MidiMessage> requestDataItem(int itemNo, DataStreamType dataTypeID) override;
 		bool isPartOfDataFileStream(const MidiMessage &message, DataStreamType dataTypeID) const override;
 		bool isDataFile(const MidiMessage &message, DataFileType dataTypeID) const override;
+		virtual bool isStreamComplete(std::vector<MidiMessage> const &messages, DataStreamType streamType) const override;
+		virtual bool shouldStreamAdvance(std::vector<MidiMessage> const &messages, DataStreamType streamType) const override;
 		std::vector<std::shared_ptr<DataFile>> loadData(std::vector<MidiMessage> messages, DataStreamType dataTypeID) const override;
 		std::vector<DataFileDescription> dataTypeNames() const override;
 
