@@ -560,9 +560,9 @@ namespace midikraft {
 
 	std::vector<DataFileLoadCapability::DataFileDescription> Rev2::dataTypeNames() const
 	{
-		return { { DataFileType(PATCH), "Patch", true, true}, 
-		{ DataFileType(GLOBAL_SETTINGS), "Global Settings", true, false}, 
-		{ DataFileType(ALTERNATE_TUNING), "Alternate Tuning", false, true } };
+		return { { DataFileType(PATCH), "Patch"}, 
+		{ DataFileType(GLOBAL_SETTINGS), "Global Settings"}, 
+		{ DataFileType(ALTERNATE_TUNING), "Alternate Tuning"} };
 	}
 
 	std::vector<juce::MidiMessage> Rev2::dataFileToMessages(std::shared_ptr<DataFile> dataFile, std::shared_ptr<SendTarget> target) const
