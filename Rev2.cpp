@@ -11,7 +11,7 @@
 #include "Rev2Patch.h"
 
 #include <algorithm>
-#include <boost/format.hpp>
+#include <spdlog/spdlog.h>
 
 #include "MidiHelpers.h"
 #include "TypedNamedValue.h"
@@ -42,7 +42,7 @@ namespace midikraft {
 		{ 2044, 2047} // the two bytes that are wrongly not encoded (firmware bug), and two bytes that are only buffered to get to clean 2048 size
 	};
 
-	std::string intervalToText(int interval) {
+	/*static std::string intervalToText(int interval) {
 		if (interval == 0) {
 			return "same note";
 		}
@@ -51,8 +51,8 @@ namespace midikraft {
 			octave++;
 			interval -= 12;
 		}
-		std::string octaveText = octave == 1 ? "one octave" : (boost::format("%d octaves") % octave).str();
-		std::string semitoneText = interval == 0 ? "same note" : (boost::format("%d semi-tones") % interval).str();
+		std::string octaveText = octave == 1 ? "one octave" : fmt::format("{} octaves", octave);
+		std::string semitoneText = interval == 0 ? "same note" : fmt::format("{} semi-tones", interval);
 		if (interval == 0) {
 			return octaveText;
 		}
@@ -62,7 +62,7 @@ namespace midikraft {
 		else {
 			return octaveText + " and " + semitoneText;
 		}
-	}
+	}*/
 
 	Rev2::Rev2() : DSISynth(0x2f /* Rev2 ID */)
 	{
@@ -71,18 +71,23 @@ namespace midikraft {
 
 	Synth::PatchData Rev2::filterVoiceRelevantData(std::shared_ptr<DataFile> unfilteredData) const
 	{
-		switch (unfilteredData->dataTypeID())
-		{
-		case PATCH:
-			return Patch::blankOut(kRev2BlankOutZones, unfilteredData->data());
-		case GLOBAL_SETTINGS:
-			// Global settings don't contain a name, all data is relevant
-			return unfilteredData->data();
-		case ALTERNATE_TUNING:
-			//TBD - name irrelevant?
-			return unfilteredData->data();
-		default:
-			throw new std::runtime_error("Invalid argument - unknown data type id");
+		if (unfilteredData) {
+			switch (unfilteredData->dataTypeID())
+			{
+			case PATCH:
+				return Patch::blankOut(kRev2BlankOutZones, unfilteredData->data());
+			case GLOBAL_SETTINGS:
+				// Global settings don't contain a name, all data is relevant
+				return unfilteredData->data();
+			case ALTERNATE_TUNING:
+				//TBD - name irrelevant?
+				return unfilteredData->data();
+			default:
+				throw std::runtime_error("Invalid argument - unknown data type id");
+			}
+		}
+		else {
+			return {};
 		}
 	}
 
@@ -96,11 +101,22 @@ namespace midikraft {
 		return 128;
 	}
 
-	std::string Rev2::friendlyBankName(MidiBankNumber bankNo) const
-	{
-		int section = bankNo.toZeroBased() / 4;
-		int bank = bankNo.toZeroBased();
-		return (boost::format("%s%d") % (section == 0 ? "U" : "F") % ((bank % 4) + 1)).str();
+	std::vector<BankDescriptor> Rev2::bankDescriptors() const {
+		std::vector<BankDescriptor> result;
+		for (int num = 0; num < numberOfBanks(); num++) {
+			int section = num / 4;
+			int bank = num;
+			std::string name = fmt::format("{}{}", (section == 0 ? "U" : "F"), ((bank % 4) + 1));
+			result.push_back(
+				BankDescriptor{
+					MidiBankNumber::fromZeroBase(num, numberOfPatches())
+					, name
+					, numberOfPatches()
+					, section == 1
+					, "Patches"
+				});
+		}
+		return result;
 	}
 
 	std::shared_ptr<DataFile> Rev2::patchFromSysex(const std::vector<MidiMessage>& message) const
@@ -124,7 +140,7 @@ namespace midikraft {
 		// Decode the data
 		const uint8 *startOfData = &message[0].getSysExData()[startIndex];
 		auto patchData = unescapeSysex(startOfData, message[0].getSysExDataSize() - startIndex, 2048);
-		MidiProgramNumber place;
+		MidiProgramNumber place = MidiProgramNumber::invalidProgram();
 		if (isSingleProgramDump(message)) {
 			int bank = message[0].getSysExData()[3];
 			int program = message[0].getSysExData()[4];
@@ -196,12 +212,12 @@ namespace midikraft {
 		return result;
 	}
 
-	bool isPolySequencerRest(int note, int velocity) {
+	static bool isPolySequencerRest(int note, int velocity) {
 		// Wild guess...
 		return note == 60 && velocity == 128;
 	}
 
-	bool isPolySequencerTie(int note, int velocity) {
+	static bool isPolySequencerTie(int note, int velocity) {
 		ignoreUnused(velocity);
 		return note > 128;
 	}
@@ -212,7 +228,7 @@ namespace midikraft {
 			// Copy the PolySequence into the Gated Track
 			// Find the lowest note in the poly sequence
 			int lowestNote = 127;
-			for (int i = 0; i < 16; i++) {
+			for (size_t i = 0; i < 16; i++) {
 				if (programEditBuffer[cStepSeqNote1Index + i] < lowestNote) {
 					lowestNote = programEditBuffer[cStepSeqNote1Index + i];
 				}
@@ -225,19 +241,19 @@ namespace midikraft {
 				indexNote -= 12;
 			}
 
-			for (int i = 0; i < 16; i++) {
+			for (size_t i = 0; i < 16; i++) {
 				// 16 steps in the gated sequencer...
 				// The gated sequencer allows half-half steps in pitch, so we multiply by 2...
 				uint8 notePlayed = programEditBuffer[cStepSeqNote1Index + i];
 				uint8 velocityPlayed = programEditBuffer[cStepSeqVelocity1Index + i];
 				if (velocityPlayed > 0 && !isPolySequencerRest(notePlayed, velocityPlayed) && !isPolySequencerTie(notePlayed, velocityPlayed)) {
-					programEditBuffer[gatedSeqTrack * 16 + i + cGatedSeqIndex] = clamp((notePlayed - indexNote) * 2, 0, 125);
+					programEditBuffer[(size_t)gatedSeqTrack * 16 + i + cGatedSeqIndex] = clamp((notePlayed - indexNote) * 2, 0, 125);
 				}
 				else {
 					// 126 is the reset in the gated sequencer, 127 is the rest, which is only allowed in track 1 if I believe the Prophet 8 documentation
-					programEditBuffer[gatedSeqTrack * 16 + i + cGatedSeqIndex] = 127;
+					programEditBuffer[(size_t) gatedSeqTrack * 16 + i + cGatedSeqIndex] = 127;
 				}
-				programEditBuffer[(gatedSeqTrack + 1) * 16 + i + cGatedSeqIndex] = clamp(velocityPlayed / 2, 0, 125);
+				programEditBuffer[(size_t)(gatedSeqTrack + 1) * 16 + i + cGatedSeqIndex] = clamp(velocityPlayed / 2, 0, 125);
 			}
 
 			// Poke the sequencer on and set the destination to OscAllFreq
@@ -452,7 +468,7 @@ namespace midikraft {
 		};
 	};
 	std::shared_ptr<Rev2GlobalSettings> sRev2GlobalSettings;
-	std::vector<DSIGlobalSettingDefinition> &gRev2GlobalSettings() {
+	static std::vector<DSIGlobalSettingDefinition> &gRev2GlobalSettings() {
 		if (!sRev2GlobalSettings) {
 			sRev2GlobalSettings = std::make_shared<Rev2GlobalSettings>();
 		}
@@ -486,7 +502,7 @@ namespace midikraft {
 					break;
 				}
 				case ALTERNATE_TUNING: {
-					MidiTuning tuning(MidiProgramNumber::fromZeroBase(0), "unused", {});
+					MidiTuning tuning(MidiProgramNumber::invalidProgram(), "unused", {});
 					if (MidiTuning::fromMidiMessage(m, tuning)) {
 						std::vector<uint8> mtsData({ m.getSysExData(), m.getSysExData() + m.getSysExDataSize() });
 						auto storage = std::make_shared<MTSFile>(ALTERNATE_TUNING, mtsData);
@@ -521,7 +537,7 @@ namespace midikraft {
 		case GLOBAL_SETTINGS:
 			// Not possible
 			jassert(false);
-			SimpleLogger::instance()->postMessage("Program error - don't try to send global settings in one messages to synth");
+			spdlog::error("Program error - don't try to send global settings in one messages to synth");
 			break;
 		case ALTERNATE_TUNING: {
 			// This makes sense, though we should patch the program place in the program
@@ -558,7 +574,7 @@ namespace midikraft {
 	std::vector<juce::MidiMessage> Rev2::patchToProgramDumpSysex(std::shared_ptr<DataFile> patch, MidiProgramNumber programNumber) const
 	{
 		// Create a program data dump message
-		int programPlace = programNumber.toZeroBased();
+		int programPlace = programNumber.toZeroBasedDiscardingBank() % 128;
 		int bank = programPlace / 128;
 		if (programNumber.bank().isValid()) {
 			bank = programNumber.bank().toZeroBased();
@@ -575,12 +591,12 @@ namespace midikraft {
 		return "DSI Prophet Rev2";
 	}
 
-	juce::MidiMessage Rev2::clearPolySequencer(const MidiMessage &programEditBuffer, bool layerA, bool layerB)
+	juce::MidiMessage Rev2::clearPolySequencer(const MidiMessage &programEditBufferParam, bool layerA, bool layerB)
 	{
-		return filterProgramEditBuffer(programEditBuffer, [layerA, layerB](std::vector<uint8> &programEditBuffer) {
+		return filterProgramEditBuffer(programEditBufferParam, [layerA, layerB](std::vector<uint8> &programEditBuffer) {
 			// Just fill all 6 tracks of the Poly Sequencer with note 0x3f and velocity 0
-			for (int track = 0; track < 6; track++) {
-				for (int step = 0; step < 64; step++) {
+			for (size_t track = 0; track < 6; track++) {
+				for (size_t step = 0; step < 64; step++) {
 					if (layerA) {
 						programEditBuffer[cStepSeqNote1Index + track * 128 + step] = cDefaultNote;
 						programEditBuffer[cStepSeqVelocity1Index + track * 128 + step] = 0x00;
@@ -607,13 +623,13 @@ namespace midikraft {
 	std::string Rev2::friendlyProgramName(MidiProgramNumber programNo) const
 	{
 		// The Rev2 has 8 banks of 128 patches, in two sections U and F called U1 to U4 and F1 to F4
-		int bank = programNo.toZeroBased() / 128;
+		int bank = programNo.toZeroBasedWithBank() / 128;
 		if (programNo.bank().isValid()) {
 			bank = programNo.bank().toZeroBased();
 		}
 		int section = bank / 4;
-		int program = programNo.toZeroBased() % 128;
-		return (boost::format("%s%d P%d") % (section == 0 ? "U" : "F") % ((bank % 4) + 1) % (program+1)).str();
+		int program = programNo.toZeroBasedDiscardingBank() % 128;
+		return fmt::format("{}{} P{}", (section == 0 ? "U" : "F"), ((bank % 4) + 1), (program+1));
 	}
 
 }

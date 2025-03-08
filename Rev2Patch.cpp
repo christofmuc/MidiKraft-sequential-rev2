@@ -13,8 +13,7 @@
 
 #include "MidiNote.h"
 
-#include <boost/format.hpp>
-#include <boost/algorithm/string.hpp>
+#include "I18NHelper.h"
 
 namespace midikraft {
 
@@ -221,7 +220,7 @@ namespace midikraft {
 		Rev2ParamDefinition(980, 1043, 128, 255, "Poly Seq Vel 6", 960)
 	};
 
-	Rev2Patch::Rev2Patch() : Patch(Rev2::PATCH), number_(MidiProgramNumber::fromZeroBase(0))
+	Rev2Patch::Rev2Patch() : Patch(Rev2::PATCH), number_(MidiProgramNumber::invalidProgram())
 	{
 		// Load the init patch
 		MidiMessage initPatch = MidiMessage(Rev2_InitPatch_syx, Rev2_InitPatch_syx_size);
@@ -240,8 +239,8 @@ namespace midikraft {
 	{
 		std::string layerA = layerName(0);
 		std::string layerB = layerName(1);
-		boost::trim(layerA);
-		boost::trim(layerB);
+		string_trim(layerA);
+		string_trim(layerB);
 
 		if (layerA == layerB) {
 			switch (layerMode()) {
@@ -260,10 +259,11 @@ namespace midikraft {
 		return "invalid patch";
 	}
 
-	void Rev2Patch::setName(std::string const &name)
+	bool Rev2Patch::changeNameStoredInPatch(std::string const &name)
 	{
 		// This is ignored, if you want to change the name, you have to change both layer's names
 		ignoreUnused(name);
+		return true;
 	}
 
 	bool Rev2Patch::isDefaultName(std::string const &patchName) const
@@ -302,6 +302,10 @@ namespace midikraft {
 		return 2;
 	}
 
+	std::vector<std::string> Rev2Patch::layerTitles() const {
+		return {"Layer A", "Layer B"};
+	}
+
 	std::string Rev2Patch::layerName(int layerNo) const
 	{
 		// The Rev2 has a 20 character patch name storage for each of the 2 layers...	
@@ -309,7 +313,7 @@ namespace midikraft {
 		size_t baseIndex = layerNo == 0 ? 235 : 1259; // Layer A starts at 235, Layer B starts at 1259
 		std::string layerName;
 		for (size_t i = baseIndex; i < baseIndex + 20; i++) {
-			layerName.push_back(data()[i]);
+			layerName.push_back((char) (data()[i]));
 		}
 		return layerName;
 	}
@@ -320,7 +324,7 @@ namespace midikraft {
 		int baseIndex = layerNo == 0 ? 235 : 1259; // Layer A starts at 235, Layer B starts at 1259
 		for (int i = 0; i < 20; i++) {
 			if (i < (int) layerName.size()) {
-				setAt(baseIndex + i, layerName[i]);
+				setAt(baseIndex + i, (uint8)layerName[(size_t)i]);
 			}
 			else {
 				// Fill the 20 characters with space

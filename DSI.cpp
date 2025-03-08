@@ -8,7 +8,8 @@
 
 #include "MidiHelpers.h"
 
-#include <boost/format.hpp>
+#include <spdlog/spdlog.h>
+#include "SpdLogJuce.h"
 
 namespace midikraft {
 
@@ -61,6 +62,14 @@ namespace midikraft {
 			&& message.getSysExData()[1] == midiModelID_;
 	}
 
+	std::vector<juce::MidiMessage> DSISynth::bankSelectMessages(MidiBankNumber bankNo) const {
+		// Documented on page 82 of the Rev2 manual
+		if (channel().isValid() && bankNo.isValid()) {
+			return { juce::MidiMessage(0xb0 | (channel().toZeroBasedInt() & 0x0f), 32, bankNo.toZeroBased()) };
+		}
+		return { };
+	}
+
 	MidiChannel DSISynth::channelIfValidDeviceResponse(const MidiMessage &message)
 	{
 		if (message.isSysEx() && message.getSysExDataSize() > 9) {
@@ -83,7 +92,7 @@ namespace midikraft {
 			int versionMajor = data[9]; // This is different from the Rev2 manual, which states that the version is within one byte
 			int versionMinor = data[10];
 			int versionPatch = data[11];
-			versionString_ = (boost::format("%d.%d.%d") % versionMajor % versionMinor % versionPatch).str();
+			versionString_ = fmt::format("{}.{}.{}", versionMajor, versionMinor, versionPatch);
 			if (data[1] == 0b01111111) {
 				//Omni seems to be 0b01111111 at DSI
 				return MidiChannel::omniChannel();
@@ -132,7 +141,7 @@ namespace midikraft {
 			// Bank is stored in position 3, program number in position 4
 			return MidiProgramNumber::fromZeroBaseWithBank(MidiBankNumber::fromZeroBase(message[0].getSysExData()[3], numberOfPatches()),  message[0].getSysExData()[4]);
 		}
-		return MidiProgramNumber::fromZeroBase(0);
+		return MidiProgramNumber::invalidProgram();
 	}
 
 	MidiChannel DSISynth::getOutputChannel() const
@@ -194,15 +203,15 @@ namespace midikraft {
 	Synth::PatchData DSISynth::unescapeSysex(const uint8 *sysExData, int sysExLen, int expectedLength)
 	{
 		PatchData result;
-		int dataIndex = 0;
-		while (dataIndex < sysExLen) {
+		size_t dataIndex = 0;
+		while (dataIndex < (size_t) sysExLen) {
 			uint8 ms_bits = sysExData[dataIndex];
 			dataIndex++;
-			for (int i = 0; i < 7; i++) {
+			for (size_t i = 0; i < 7; i++) {
 				// Actually, the last 7 byte block might be incomplete, as the original number of data bytes might not be a
 				// multitude of 7. Instead of buffering with 0, the DSI folks terminate the block with less than 7 bytes
-				if (dataIndex < sysExLen) {
-					result.push_back(sysExData[dataIndex] | ((ms_bits & (1 << i)) << (7 - i)));
+				if (dataIndex < (size_t) sysExLen) {
+					result.push_back(sysExData[dataIndex] | (uint8)((ms_bits & (1 << i)) << (7 - i)));
 				}
 				dataIndex++;
 			}
@@ -256,7 +265,7 @@ namespace midikraft {
 					// Therefore, don't notify the update synth listener, because that would send out the same data back to the synth where it is coming from
 					globalSettingsTree_.setPropertyExcludingListener(&updateSynthWithGlobalSettingsListener_,
 						Identifier(dsiGlobalSettings()[i].typedNamedValue.name()),
-						var(globalParameterData[dsiGlobalSettings()[i].sysexIndex] + dsiGlobalSettings()[i].displayOffset),
+						var(globalParameterData[(size_t) dsiGlobalSettings()[i].sysexIndex] + dsiGlobalSettings()[i].displayOffset),
 						nullptr);
 				}
 			}
@@ -281,11 +290,16 @@ namespace midikraft {
 					valueText = bool(value.getValue()) ? "On" : "Off"; break;
 				case ValueType::Lookup:
 					valueText = def.typedNamedValue.lookup()[int(value.getValue())]; break;
+                case ValueType::String:
+                case ValueType::List:
+                case ValueType::Filename:
+                case ValueType::Pathname:
+                case ValueType::Color:
 				default:
 					//TODO not implemented yet
 					jassert(false);
 				}
-				SimpleLogger::instance()->postMessage("Setting " + def.typedNamedValue.name() + " to " + valueText);				
+				spdlog::info("Setting {} to {}",def.typedNamedValue.name(), valueText);				
 				synth_->sendBlockOfMessagesToSynth(synth_->midiOutput(), messages);
 				return;
 			}
